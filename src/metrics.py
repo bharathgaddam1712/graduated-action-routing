@@ -93,6 +93,7 @@ def compute_step_distribution(steps_df: pd.DataFrame) -> pd.DataFrame:
     For each (policy, slm_name, dataset, step_idx), compute:
     - escalation_rate: fraction of steps at that index that used LLM
     - mean_entropy: mean first_token_entropy at that step
+    - survival_rate: fraction of episodes still active at that step
     """
     rows = []
     for (policy, slm, ds, step_idx), grp in steps_df.groupby(
@@ -107,7 +108,13 @@ def compute_step_distribution(steps_df: pd.DataFrame) -> pd.DataFrame:
             "mean_entropy":   float(grp["first_token_entropy"].mean()),
             "n_steps":        len(grp),
         })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    # Baseline logs never escalate, so escalation_rate is 0 by construction;
+    # survival (step counts are non-increasing, so max = episodes started)
+    # is the position signal fig3 plots instead.
+    df["survival_rate"] = df["n_steps"] / df.groupby(
+        ["policy", "slm_name", "dataset"])["n_steps"].transform("max")
+    return df
 
 
 # ---------------------------------------------------------------------------

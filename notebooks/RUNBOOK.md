@@ -1,3 +1,9 @@
+# Historical Kaggle Runbook
+
+This document describes the exploratory workflow and its earlier workshop
+target. For current PAgE 2027 experiments, use
+[`../page2027_confirmatory/README.md`](../page2027_confirmatory/README.md).
+
 # Paper B — RUNBOOK
 **"Graduated Action Routing for ReAct Agents"**  
 SLM-Agents @ NeurIPS 2026 — **Deadline: Aug 22, 2026**

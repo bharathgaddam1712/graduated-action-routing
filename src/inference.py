@@ -118,14 +118,19 @@ def generate_single_with_logits(
         margin    = float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else 0.0
         mean_top5 = float(sorted_probs[:5].mean())
 
-        # All-token mean entropy
+        # All-token mean entropy + window_conf (AdaptEvolve: mean of bottom 20% log-probs)
         all_entropies = []
+        all_logprobs  = []
         for score in out.scores:
             p = torch.softmax(score[0], dim=-1).cpu().float().numpy()
             all_entropies.append(float(-(p * np.log(p + 1e-9)).sum()))
+            all_logprobs.append(float(np.log(p.max() + 1e-9)))
         mean_entropy = float(np.mean(all_entropies))
+        # bottom 20% of per-token log-probs → high value = uncertain (AdaptEvolve BWC signal)
+        k = max(1, len(all_logprobs) // 5)
+        window_conf  = float(np.mean(sorted(all_logprobs)[:k]))
     else:
-        entropy = mean_entropy = top1_prob = margin = mean_top5 = 0.0
+        entropy = mean_entropy = top1_prob = margin = mean_top5 = window_conf = 0.0
 
     return {
         "response":             response,
@@ -134,6 +139,7 @@ def generate_single_with_logits(
         "top1_prob":            top1_prob,
         "margin_top1_top2":     margin,
         "mean_top5_prob":       mean_top5,
+        "window_conf":          window_conf,   # AdaptEvolve BWC signal (negative log-prob, lower = more uncertain)
     }
 
 

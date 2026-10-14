@@ -2,10 +2,14 @@
 Model registry for Paper B (SLM-Agents).
 4 models: 3 SLM levels + 1 LLM oracle. All local, no paid API.
 Adapted from light_paper/src/models.py — same load_model() signature.
+
+Server port: fp16 everywhere. The 4-bit NF4 path was a Kaggle-T4 VRAM
+constraint; on 96GB cards the full 1.5B+3B+8B cascade is ~25GB in fp16, and
+dropping bitsandbytes removes the sm_120 (Blackwell) compat risk.
 """
 
 from dataclasses import dataclass
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
 
@@ -22,7 +26,7 @@ MODEL_REGISTRY: list[ModelConfig] = [
     ModelConfig("Qwen2.5-1.5B", "Qwen/Qwen2.5-1.5B-Instruct",               1.5, False, 1),
     ModelConfig("Qwen2.5-3B",   "Qwen/Qwen2.5-3B-Instruct",                 3.0, False, 2),
     ModelConfig("Phi-3-mini",   "microsoft/Phi-3-mini-4k-instruct",          3.8, False, 2),
-    ModelConfig("Llama-3.1-8B", "meta-llama/Meta-Llama-3.1-8B-Instruct",    8.0, True,  3),
+    ModelConfig("Llama-3.1-8B", "meta-llama/Meta-Llama-3.1-8B-Instruct",    8.0, False, 3),
 ]
 
 SLM_MODELS = [m for m in MODEL_REGISTRY if m.level < 3]   # routing candidates
@@ -44,26 +48,12 @@ def load_model(config: ModelConfig, device: str = "auto"):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    if config.load_in_4bit:
-        bnb = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            config.hf_id,
-            quantization_config=bnb,
-            device_map=device,
-            trust_remote_code=True,
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            config.hf_id,
-            torch_dtype=torch.float16,
-            device_map=device,
-            trust_remote_code=True,
-        )
+    model = AutoModelForCausalLM.from_pretrained(
+        config.hf_id,
+        torch_dtype=torch.float16,
+        device_map=device,
+        trust_remote_code=True,
+    )
 
     model.eval()
     return model, tokenizer

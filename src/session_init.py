@@ -31,7 +31,11 @@ def init(base_dir: str | None = None) -> dict[str, Path]:
     if on_kaggle:
         WORK = Path("/kaggle/working/slm_agents_paper")
     else:
-        WORK = Path(base_dir) if base_dir else Path(__file__).parent.parent
+        # Server/local: SLM_HOME (from .env via env.sh) wins so results can live
+        # on a big scratch mount; otherwise fall back to the repo directory.
+        WORK = Path(base_dir) if base_dir else Path(
+            os.environ.get("SLM_HOME", Path(__file__).parent.parent)
+        )
 
     SRC     = WORK / "src"
     DATA    = WORK / "data"

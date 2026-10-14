@@ -145,20 +145,27 @@ LOGIT_FEATURES = [
     "top1_prob",
     "margin_top1_top2",
     "mean_top5_prob",
+    "window_conf",       # AdaptEvolve BWC signal — bottom 20% log-prob mean
 ]
+
+# For step_idx ablation in step4: include step position as a feature
+LOGIT_FEATURES_WITH_STEP = LOGIT_FEATURES + ["step_idx"]
 
 
 class LearnedRouter(Router):
-    def __init__(self, clf):
-        """clf: trained sklearn Pipeline (StandardScaler + LogisticRegression)."""
+    def __init__(self, clf, features: list[str] | None = None):
+        """clf: trained sklearn Pipeline (StandardScaler + LogisticRegression).
+        features: the exact feature list clf was trained on — inference must
+        use the same columns in the same order (defaults to LOGIT_FEATURES)."""
         self.clf = clf
+        self.features = list(features) if features else list(LOGIT_FEATURES)
         self._threshold = 0.5   # probability threshold for escalation
 
     def set_threshold(self, t: float):
         self._threshold = t
 
     def decide_from_features(self, features: dict) -> bool:
-        x = np.array([[features.get(f, 0.0) for f in LOGIT_FEATURES]])
+        x = np.array([[features.get(f, 0.0) for f in self.features]])
         prob_escalate = self.clf.predict_proba(x)[0][1]
         return prob_escalate >= self._threshold
 
@@ -181,11 +188,18 @@ def train_learned_router(steps_df: pd.DataFrame, verbose: bool = True) -> tuple:
 
     Returns (LearnedRouter, auc_score, feature_importances_dict)
     """
-    df = steps_df.dropna(subset=LOGIT_FEATURES)
+    # Train only on features actually present in the CSV. baseline_steps.csv
+    # predates window_conf being threaded through StepResult, so it has 5 of
+    # the 6 LOGIT_FEATURES — intersect instead of KeyError-ing.
+    feats = [f for f in LOGIT_FEATURES if f in steps_df.columns]
+    missing = [f for f in LOGIT_FEATURES if f not in steps_df.columns]
+    if missing:
+        print(f"[routing] features not in steps CSV, excluded from training: {missing}")
+    df = steps_df.dropna(subset=feats)
 
     # Label: step came from an episode where SLM failed → SLM needed help
     # Steps from always_slm baseline where episode_success=False are "hard" steps
-    X = df[LOGIT_FEATURES].values
+    X = df[feats].values
     y = (~df["episode_success"]).astype(int).values   # 1 = SLM failed, should escalate
 
     if len(np.unique(y)) < 2:
@@ -201,14 +215,14 @@ def train_learned_router(steps_df: pd.DataFrame, verbose: bool = True) -> tuple:
 
     # Feature importances (LR coefficients after scaling)
     coefs = clf.named_steps["lr"].coef_[0]
-    importances = dict(zip(LOGIT_FEATURES, coefs))
+    importances = dict(zip(feats, coefs))
 
     if verbose:
         print(f"[routing] LearnedRouter trained: AUC={auc:.3f}, n_train={len(df)}")
         for feat, coef in sorted(importances.items(), key=lambda x: abs(x[1]), reverse=True):
             print(f"  {feat:30s}: {coef:+.3f}")
 
-    return LearnedRouter(clf), float(auc), importances
+    return LearnedRouter(clf, feats), float(auc), importances
 
 
 # ---------------------------------------------------------------------------

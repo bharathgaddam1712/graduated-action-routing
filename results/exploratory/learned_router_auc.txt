@@ -1,0 +1,3 @@
+AUC_logit_only=0.7060
+AUC_with_step=0.7194
+delta=+0.0134
